@@ -1,10 +1,9 @@
 # AcqWordReportReviewer_Exe
-ACQUA Report Reviewer is a standalone Windows application that processes ACQUA audio test report Word documents (.docx) and extracts key test data, validation results, and status information into an organized summary report.
 # ACQUA Report Reviewer - User Guide
 
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Author:** Jian Zou  
-**Last Updated:** January 27, 2026
+**Last Updated:** January 30, 2026
 
 ---
 
@@ -23,43 +22,56 @@ ACQUA Report Reviewer is a standalone Windows application that processes ACQUA a
 
 ## Overview
 
-ACQUA Report Reviewer is a standalone Windows application that processes ACQUA audio test report Word documents (.docx) and extracts key test data, validation results, and status information into an organized summary report.
+ACQUA Report Reviewer is a Python-based tool (also available as a standalone Windows .exe) that processes ACQUA audio test report Word documents (.docx) and extracts key test data, validation results, and status information into an organized summary report.
 
 ### Key Features
 
 - **Multi-file Processing**: Select and process multiple ACQUA report files at once
 - **Test Time Analysis**: Calculate test duration by category and overall
-- **Test Case Validation**: Verify required test cases for Shared Space Speakerphone certification
+- **Test Case Validation**: Verify required test cases for Shared Speakerphone, Headset, Open Office Headset, Handset, and Personal/Desktop Speakerphone
 - **ACQUA & Database Version Tracking**: Extract software and database versions from reports
 - **Equipment Settings Extraction**: Display labCORE, HATS/HMS, and BEQ configuration
 - **54dB Noise Scenario Analysis**: Compare NS ON vs NS OFF results
 - **Status Overview**: Identify "Not OK" entries across all reports
 - **Double Talk Performance**: Extract attenuation measurements
 - **CSV Export**: All results exported to a single CSV file for further analysis
+- **Long file name support**: Output tables now support up to 100-character file names
+- **Packaged as .exe**: Build script included for easy packaging
 
 ---
 
 ## System Requirements
 
 - **Operating System**: Windows 10 or later
-- **No additional software required** - the executable includes all dependencies
+- **Python 3.8+** (if running from source)
+- **Required Python packages**: python-docx, tkinter
+- **No Python required** if using the packaged .exe
 
 ---
 
 ## Getting Started
 
-### Running the Application
+### Using the Standalone Executable
 
-1. Double-click `ACQUA_ReportReviewer_v1.0.0.exe` to launch the application
-2. A console window will open displaying the version information:
+1. Run `build.ps1` in PowerShell to generate the .exe (requires Python and PyInstaller):
+   ```
+   .\build.ps1
+   ```
+2. Find the generated `process_acqua_reports.exe` in the `dist` folder.
+3. Double-click the .exe or run it from the command line.
 
-```
-╔══════════════════════════════════════════════════════════════╗
-║  ACQUA Report Reviewer v1.0.0                                ║
-║  Author: Jian Zou                                            ║
-║  Last Updated: 2026-01-27                                    ║
-╚══════════════════════════════════════════════════════════════╝
-```
+### Using Python Source
+
+1. Clone or download the repository.
+2. Open a terminal in the project directory.
+3. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+4. Run the script:
+   ```
+   python process_acqua_reports.py
+   ```
 
 ---
 
@@ -81,7 +93,7 @@ The application will display progress and results in the console window:
 
 - Processing status for each file
 - Summary tables with extracted data
-- Validation results
+- Validation results for all supported device types
 
 ### Step 3: Review Output File
 
@@ -97,7 +109,7 @@ The console displays formatted tables with the following sections:
 
 1. Test Time by Category
 2. Overall Test Duration
-3. Shared Space Speakerphone Validation (if applicable)
+3. Device Type Validation (Shared Speakerphone, Headset, Open Office Headset, Handset, Personal/Desktop Speakerphone)
 4. ACQUA & Teams Database Information
 5. Test Case Validation
 6. 54dB Noise Scenario Results
@@ -145,26 +157,18 @@ Aggregates all tests regardless of category, showing:
 Displays for each processed file:
 - **ACQUA Version**: Software version (e.g., "ACQUA 6.0.200")
 - **Database Version**: Teams database revision (e.g., "51_MS_Teams_Rev05_SP2")
+- **File**: Up to 100 characters shown in output
 
-### Shared Space Speakerphone Validation
+### Device Type Validation
 
-When Shared Space Speakerphone tests are detected, displays:
+Validation output is provided for:
+- Shared Speakerphone
+- Headset
+- Open Office Headset
+- Handset
+- Personal/Desktop Speakerphone
 
-**Equipment Settings:**
-- labCORE serial numbers, firmware, and nicknames
-- HATS/HMS serial numbers, equalization, and pinna types
-- BEQ equalization settings (highlights P05R/P10R with DF)
-
-**Test Case Validation:**
-- Lists required test cases for each category (AR, RR, Di)
-- Shows missing test cases with ✗ marker
-- Confirms complete test sets with ✓ marker
-
-**Minimal Subset Test Cases:**
-```
-P01A, P02A, P03A, P04A, P09A, P12A, P13A, P14A, P21A, P25A, P26A, P27A, 
-P01D, P01R, P02R, P10R, P11R, P12R
-```
+Each section lists required test cases for AR, RR, Di, and Op categories as appropriate, and highlights missing or complete sets.
 
 ### 54dB Noise Scenario Results
 
@@ -172,7 +176,7 @@ Compares noise suppression performance:
 
 | Field | Description |
 |-------|-------------|
-| Device | Device name from filename |
+| Device | Device name from filename (up to 100 chars) |
 | Lab | Test lab (AST or PAL) |
 | Report Time | Test date |
 | NS Setting | Noise Suppression ON or OFF |
@@ -181,7 +185,7 @@ Compares noise suppression performance:
 ### Status Overview: 'Not OK' Entries
 
 Lists all test items that did not pass, including:
-- File name
+- File name (up to 100 chars)
 - SMD (test description)
 - Specific issues or failed criteria
 
@@ -217,7 +221,7 @@ Extracts attenuation measurements during double talk scenarios:
 - **Solution**: Run from Command Prompt to see error details:
   ```cmd
   cd C:\path\to\folder
-  ACQUA_ReportReviewer_v1.0.0.exe
+  process_acqua_reports.exe
   ```
 
 ---
@@ -234,7 +238,7 @@ A: Only Microsoft Word documents (.docx) exported from ACQUA are supported. Lega
 A: Each run creates a new Smd_Report_Output.csv. Rename or move previous output files before running again to preserve them.
 
 **Q: Can I automate this tool from command line?**  
-A: Currently, the tool uses a graphical file picker. Command-line automation is planned for a future version.
+A: The tool uses a graphical file picker by default. For automation, use the Python script with command-line arguments (see --help).
 
 **Q: What if some tests show as "Custom" category?**  
 A: This means the test code wasn't recognized as a standard ACQUA code. The tool will still extract and display the data.
@@ -248,5 +252,8 @@ For questions or issues, contact:
 - **Email**: jianzou@microsoft.com
 
 ---
+
+*© 2026 Microsoft Corporation. For internal use only.*
+
 
 *© 2026 Microsoft Corporation. For internal use only.*
