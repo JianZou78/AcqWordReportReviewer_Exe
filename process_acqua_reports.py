@@ -8,10 +8,10 @@ test data, validation results, and status information.
 Author: Jian Zou
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "Jian Zou"
 __email__ = "jianzou@microsoft.com"
-__date__ = "2026-01-27"
+__date__ = "2026-01-30"
 __description__ = "ACQUA Report Reviewer - Process and analyze ACQUA test reports"
 
 import tkinter as tk
@@ -170,6 +170,53 @@ REQUIRED_SHARED_SPEAKERPHONE = {
     },
     "Di": {
         "Di01A", "Di03A", "Di05A", "Di06A", "Di07A",  "Di09A", "Di10A", "Di11A", "Di12A"
+    }
+}
+
+REQUIRED_HEADSET = {
+    "AR": {
+        "P01A", "P02A", "P03A", "P04A", "P05A", "P06A", "P07A", "P09A", "P10A", "P11A",
+        "P12A", "P13A", "P14A", "P15A", "P16A", "P18A", "P19A", "P20A", "P21A", "P22A",
+        "P23A", "P24A", "P25A", "P26A", "P27A", "P28A", "P29A", "P30A"
+    },
+    "RR": {
+        "P01R", "P02R", "P05R", "P06R", "P07R", "P08R", "P10R", "P11R", "P12R"
+    },
+    "Di": {
+        "Di01A", "Di02A", "Di03A", "Di04A", "Di05A", "Di06A", "Di07A", "Di08A",
+        "Di09A", "Di10A", "Di11A", "Di12A"
+    }
+}
+
+REQUIRED_OPEN_OFFICE_HEADSET = {
+    "Op": {
+        "OpO01R", "OpO02R", "OpO03R", "OpO04R", "OpO05R"
+    }
+}
+
+REQUIRED_HANDSET = {
+    "AR": {
+        "P01A", "P02A", "P03A", "P04A", "P05A", "P06A", "P07A", "P09A", "P10A", "P11A",
+        "P12A", "P13A", "P14A", "P15A", "P16A", "P18A", "P19A", "P20A", "P21A", "P22A",
+        "P23A", "P24A", "P25A", "P26A", "P27A", "P30A", "P01D"
+    },
+    "RR": {
+        "P01R", "P02R", "P05R", "P06R", "P07R", "P08R", "P10R", "P11R", "P12R"
+    }
+}
+
+REQUIRED_PERSONAL_DESKTOP_SPEAKERPHONE = {
+    "AR": {
+        "P01A", "P02A", "P03A", "P04A", "P05A", "P06A", "P07A", "P08A", "P09A", "P10A",
+        "P11A", "P12A", "P13A", "P14A", "P15A", "P16A", "P17A", "P18A", "P19A", "P20A",
+        "P21A", "P22A", "P23A", "P24A", "P25A", "P26A", "P01D"
+    },
+    "RR": {
+        "P01R", "P02R", "P05R", "P06R", "P07R", "P08R", "P09R", "P10R", "P11R", "P12R"
+    },
+    "Di": {
+        "Di01A", "Di02A", "Di03A", "Di04A", "Di05A", "Di06A", "Di07A",
+        "Di09A", "Di10A", "Di11A", "Di12A"
     }
 }
 
@@ -1209,6 +1256,10 @@ def extract_status_table(file_paths):
 def process_reports(file_paths):
     extracted_rows = []
     is_shared_speakerphone = False
+    is_headset = False
+    is_open_office_headset = False
+    is_handset = False
+    is_personal_speakerphone = False
 
     print(f"Processing {len(file_paths)} file(s)...")
 
@@ -1227,10 +1278,36 @@ def process_reports(file_paths):
             for i, paragraph in enumerate(doc.paragraphs):
                 text = paragraph.text.strip()
                 
-                # Check for "Shared" or "Speakerphone" keyword to identify test case requirements
+                # Check for device type keywords to identify test case requirements
+                text_lower = text.lower()
+                
+                # Check for Shared Space Speakerphone
                 if not is_shared_speakerphone:
-                    if "Shared" in text or "Speakerphone" in text:
+                    if "shared" in text_lower and "speakerphone" in text_lower:
                         is_shared_speakerphone = True
+                
+                # Check for Headset (but not open office headset yet)
+                if not is_headset:
+                    if "headset" in text_lower:
+                        is_headset = True
+                        # Also check for open office headset
+                        if "open" in text_lower and "office" in text_lower:
+                            is_open_office_headset = True
+                
+                # Check for Open Office Headset (additional check)
+                if is_headset and not is_open_office_headset:
+                    if "open" in text_lower and "office" in text_lower:
+                        is_open_office_headset = True
+                
+                # Check for Handset
+                if not is_handset:
+                    if "handset" in text_lower:
+                        is_handset = True
+                
+                # Check for Personal/Desktop Speakerphone
+                if not is_personal_speakerphone:
+                    if ("personal" in text_lower or "desktop" in text_lower) and "speakerphone" in text_lower:
+                        is_personal_speakerphone = True
 
                 style_name = paragraph.style.name
                 styles_found.add(style_name)
@@ -1359,7 +1436,7 @@ def process_reports(file_paths):
     # Extract ACQUA and Database version info
     acqua_db_info = extract_acqua_database_info(file_paths)
 
-    return final_output, is_shared_speakerphone, noise_54db_results, all_status_rows, not_ok_rows, double_talk_results, smd_settings, acqua_db_info
+    return final_output, is_shared_speakerphone, is_headset, is_open_office_headset, is_handset, is_personal_speakerphone, noise_54db_results, all_status_rows, not_ok_rows, double_talk_results, smd_settings, acqua_db_info
 
 def main():
     # Display version info
@@ -1382,7 +1459,7 @@ def main():
         return
 
     # Process files
-    data, is_shared_speakerphone, noise_54db_results, all_status_rows, not_ok_rows, double_talk_results, smd_settings, acqua_db_info = process_reports(file_paths)
+    data, is_shared_speakerphone, is_headset, is_open_office_headset, is_handset, is_personal_speakerphone, noise_54db_results, all_status_rows, not_ok_rows, double_talk_results, smd_settings, acqua_db_info = process_reports(file_paths)
 
     if not data:
         print("No matching 'SmdTitle' or 'SmdDate' styles found in the selected files.")
@@ -1507,15 +1584,15 @@ def main():
                 validation_output.append(["labCORE Information"])
                 validation_output.append(["File", "Serial", "Firmware", "Nickname"])
                 
-                print(f"  {'File':<40} {'Serial':<20} {'Firmware':<15} {'Nickname':<30}")
-                print(f"  {'-'*40} {'-'*20} {'-'*15} {'-'*30}")
+                print(f"  {'File':<100} {'Serial':<20} {'Firmware':<15} {'Nickname':<30}")
+                print(f"  {'-'*100} {'-'*20} {'-'*15} {'-'*30}")
                 
                 for lc in smd_settings['labCORE']:
-                    file_name = lc.get('file', '')[:38]
+                    file_name = lc.get('file', '')[:98]
                     serial = lc.get('serial', 'N/A')
                     firmware = lc.get('firmware', 'N/A')
                     nickname = lc.get('nickname', 'N/A')
-                    print(f"  {file_name:<40} {serial:<20} {firmware:<15} {nickname:<30}")
+                    print(f"  {file_name:<100} {serial:<20} {firmware:<15} {nickname:<30}")
                     validation_output.append([lc.get('file', ''), serial, firmware, nickname])
             
             # Display HATS information
@@ -1525,15 +1602,15 @@ def main():
                 validation_output.append(["HATS/HMS Information"])
                 validation_output.append(["File", "Serial", "Equalization", "Pinna Type"])
                 
-                print(f"  {'File':<40} {'Serial':<15} {'Equalization':<15} {'Pinna Type':<25}")
-                print(f"  {'-'*40} {'-'*15} {'-'*15} {'-'*25}")
+                print(f"  {'File':<100} {'Serial':<15} {'Equalization':<15} {'Pinna Type':<25}")
+                print(f"  {'-'*100} {'-'*15} {'-'*15} {'-'*25}")
                 
                 for hats in smd_settings['HATS']:
-                    file_name = hats.get('file', '')[:38]
+                    file_name = hats.get('file', '')[:98]
                     serial = hats.get('serial', 'N/A')
                     equalization = hats.get('equalization', 'N/A')
                     pinna = hats.get('pinna', 'N/A')
-                    print(f"  {file_name:<40} {serial:<15} {equalization:<15} {pinna:<25}")
+                    print(f"  {file_name:<100} {serial:<15} {equalization:<15} {pinna:<25}")
                     validation_output.append([hats.get('file', ''), serial, equalization, pinna])
             
             # Display BEQ Settings (especially for P05R/P10R with DF)
@@ -1543,20 +1620,20 @@ def main():
                 validation_output.append(["BEQ Equalization Settings"])
                 validation_output.append(["File", "Test Code", "Equalization", "BEQ Setting", "Has DF"])
                 
-                print(f"  {'File':<40} {'Test Code':<10} {'Equalization':<25} {'Has DF':<10}")
-                print(f"  {'-'*40} {'-'*10} {'-'*25} {'-'*10}")
+                print(f"  {'File':<100} {'Test Code':<10} {'Equalization':<25} {'Has DF':<10}")
+                print(f"  {'-'*100} {'-'*10} {'-'*25} {'-'*10}")
                 
                 for beq in smd_settings['BEQ']:
-                    file_name = beq.get('file', '')[:38]
+                    file_name = beq.get('file', '')[:98]
                     test_code = beq.get('test_code', '')
                     equalization = beq.get('equalization', beq.get('beq_setting', 'N/A'))[:23]
                     has_df = "Yes" if beq.get('has_df', False) else "No"
                     
                     # Highlight P05R/P10R with DF
                     if test_code in ['P05R', 'P10R'] and beq.get('has_df', False):
-                        print(f"  {file_name:<40} {test_code:<10} {equalization:<25} {has_df:<10} *** DF for {test_code}")
+                        print(f"  {file_name:<100} {test_code:<10} {equalization:<25} {has_df:<10} *** DF for {test_code}")
                     else:
-                        print(f"  {file_name:<40} {test_code:<10} {equalization:<25} {has_df:<10}")
+                        print(f"  {file_name:<100} {test_code:<10} {equalization:<25} {has_df:<10}")
                     
                     validation_output.append([beq.get('file', ''), test_code, beq.get('equalization', beq.get('beq_setting', '')), beq.get('beq_setting', ''), has_df])
             
@@ -1568,14 +1645,14 @@ def main():
         validation_output.append(["--- ACQUA & Teams Database Information ---"])
         validation_output.append(["File", "ACQUA Version", "Database Version"])
         
-        print(f"  {'File':<60} {'ACQUA Version':<20} {'Database Version':<40}")
-        print(f"  {'-'*60} {'-'*20} {'-'*40}")
+        print(f"  {'File':<100} {'ACQUA Version':<20} {'Database Version':<40}")
+        print(f"  {'-'*100} {'-'*20} {'-'*40}")
         
         for info in acqua_db_info:
-            file_name = info.get('file', '')[:58]
+            file_name = info.get('file', '')[:98]
             acqua_ver = info.get('acqua_version', 'Not Found')
             db_ver = info.get('database_version', 'Not Found')
-            print(f"  {file_name:<60} {acqua_ver:<20} {db_ver:<40}")
+            print(f"  {file_name:<100} {acqua_ver:<20} {db_ver:<40}")
             validation_output.append([info.get('file', ''), acqua_ver, db_ver])
         
         print("")
@@ -1614,6 +1691,195 @@ def main():
         
         print(f"{'='*80}\n")
         validation_output.append([])  # Spacer
+    
+    # Helper function to output device validation (reusable for different device types)
+    def output_device_validation(device_name, required_tests, found_code_ids, smd_settings, acqua_db_info, validation_output, additional_tests=None, additional_name=None):
+        """Output validation section for a device type."""
+        print(f"\n{'='*80}")
+        header_msg = f"--- {device_name} Validation ---"
+        print(f"{header_msg}")
+        print(f"{'='*80}")
+        validation_output.append([header_msg])
+        
+        # Display Equipment Settings from SmdSettings
+        if smd_settings:
+            print(f"\n--- Equipment Settings (from SmdSettings) ---")
+            validation_output.append([""])
+            validation_output.append(["--- Equipment Settings ---"])
+            
+            # Display labCORE information
+            if smd_settings['labCORE']:
+                print(f"\n{'labCORE Information:'}")
+                validation_output.append(["labCORE Information"])
+                validation_output.append(["File", "Serial", "Firmware", "Nickname"])
+                
+                print(f"  {'File':<100} {'Serial':<20} {'Firmware':<15} {'Nickname':<30}")
+                print(f"  {'-'*100} {'-'*20} {'-'*15} {'-'*30}")
+                
+                for lc in smd_settings['labCORE']:
+                    file_name = lc.get('file', '')[:98]
+                    serial = lc.get('serial', 'N/A')
+                    firmware = lc.get('firmware', 'N/A')
+                    nickname = lc.get('nickname', 'N/A')
+                    print(f"  {file_name:<100} {serial:<20} {firmware:<15} {nickname:<30}")
+                    validation_output.append([lc.get('file', ''), serial, firmware, nickname])
+            
+            # Display HATS information
+            if smd_settings['HATS']:
+                print(f"\n{'HATS/HMS Information:'}")
+                validation_output.append([""])
+                validation_output.append(["HATS/HMS Information"])
+                validation_output.append(["File", "Serial", "Equalization", "Pinna Type"])
+                
+                print(f"  {'File':<100} {'Serial':<15} {'Equalization':<15} {'Pinna Type':<25}")
+                print(f"  {'-'*100} {'-'*15} {'-'*15} {'-'*25}")
+                
+                for hats in smd_settings['HATS']:
+                    file_name = hats.get('file', '')[:98]
+                    serial = hats.get('serial', 'N/A')
+                    equalization = hats.get('equalization', 'N/A')
+                    pinna = hats.get('pinna', 'N/A')
+                    print(f"  {file_name:<100} {serial:<15} {equalization:<15} {pinna:<25}")
+                    validation_output.append([hats.get('file', ''), serial, equalization, pinna])
+            
+            # Display BEQ Settings
+            if smd_settings['BEQ']:
+                print(f"\n{'BEQ Equalization Settings:'}")
+                validation_output.append([""])
+                validation_output.append(["BEQ Equalization Settings"])
+                validation_output.append(["File", "Test Code", "Equalization", "BEQ Setting", "Has DF"])
+                
+                print(f"  {'File':<100} {'Test Code':<10} {'Equalization':<25} {'Has DF':<10}")
+                print(f"  {'-'*100} {'-'*10} {'-'*25} {'-'*10}")
+                
+                for beq in smd_settings['BEQ']:
+                    file_name = beq.get('file', '')[:98]
+                    test_code = beq.get('test_code', '')
+                    equalization = beq.get('equalization', beq.get('beq_setting', 'N/A'))[:23]
+                    has_df = "Yes" if beq.get('has_df', False) else "No"
+                    
+                    if test_code in ['P05R', 'P10R'] and beq.get('has_df', False):
+                        print(f"  {file_name:<100} {test_code:<10} {equalization:<25} {has_df:<10} *** DF for {test_code}")
+                    else:
+                        print(f"  {file_name:<100} {test_code:<10} {equalization:<25} {has_df:<10}")
+                    
+                    validation_output.append([beq.get('file', ''), test_code, beq.get('equalization', beq.get('beq_setting', '')), beq.get('beq_setting', ''), has_df])
+            
+            print("")
+        
+        # ACQUA & Teams Database Information
+        print(f"\n--- ACQUA & Teams Database Information ---")
+        validation_output.append([""])
+        validation_output.append(["--- ACQUA & Teams Database Information ---"])
+        validation_output.append(["File", "ACQUA Version", "Database Version"])
+        
+        print(f"  {'File':<100} {'ACQUA Version':<20} {'Database Version':<40}")
+        print(f"  {'-'*100} {'-'*20} {'-'*40}")
+        
+        for info in acqua_db_info:
+            file_name = info.get('file', '')[:98]
+            acqua_ver = info.get('acqua_version', 'Not Found')
+            db_ver = info.get('database_version', 'Not Found')
+            print(f"  {file_name:<100} {acqua_ver:<20} {db_ver:<40}")
+            validation_output.append([info.get('file', ''), acqua_ver, db_ver])
+        
+        print("")
+        
+        # Test case validation
+        print(f"\n--- Test Case Validation for {device_name} ---")
+        validation_output.append([""])
+        validation_output.append([f"--- Test Case Validation for {device_name} ---"])
+        
+        print(f"\n{'Category':<15} {'Status':<50}")
+        print(f"{'-'*15} {'-'*50}")
+        
+        for cat, required_codes in required_tests.items():
+            missing = required_codes - found_code_ids
+            if not missing:
+                status = "✓ All required test cases included"
+                print(f"{cat:<15} {status}")
+                validation_output.append([f"Category {cat}: All required test cases included"])
+            else:
+                status = f"✗ Missing: {', '.join(sorted(missing))}"
+                print(f"{cat:<15} {status}")
+                validation_output.append([f"Category {cat}: Missing - {', '.join(sorted(missing))}"])
+        
+        # Check additional tests if provided (e.g., Open Office Headset)
+        if additional_tests and additional_name:
+            print(f"\n--- Additional Tests for {additional_name} ---")
+            validation_output.append([""])
+            validation_output.append([f"--- Additional Tests for {additional_name} ---"])
+            
+            for cat, required_codes in additional_tests.items():
+                missing = required_codes - found_code_ids
+                if not missing:
+                    status = "✓ All required test cases included"
+                    print(f"{cat:<15} {status}")
+                    validation_output.append([f"Category {cat}: All required test cases included"])
+                else:
+                    status = f"✗ Missing: {', '.join(sorted(missing))}"
+                    print(f"{cat:<15} {status}")
+                    validation_output.append([f"Category {cat}: Missing - {', '.join(sorted(missing))}"])
+        
+        print(f"{'='*80}\n")
+        validation_output.append([])  # Spacer
+    
+    # Headset Validation
+    if is_headset:
+        found_code_ids = set()
+        for row in data:
+            found_code_ids.add(row[0])
+        
+        if is_open_office_headset:
+            output_device_validation(
+                "Headset (Open Office)", 
+                REQUIRED_HEADSET, 
+                found_code_ids, 
+                smd_settings, 
+                acqua_db_info, 
+                validation_output,
+                additional_tests=REQUIRED_OPEN_OFFICE_HEADSET,
+                additional_name="Open Office Headset"
+            )
+        else:
+            output_device_validation(
+                "Headset", 
+                REQUIRED_HEADSET, 
+                found_code_ids, 
+                smd_settings, 
+                acqua_db_info, 
+                validation_output
+            )
+    
+    # Handset Validation
+    if is_handset:
+        found_code_ids = set()
+        for row in data:
+            found_code_ids.add(row[0])
+        
+        output_device_validation(
+            "Handset", 
+            REQUIRED_HANDSET, 
+            found_code_ids, 
+            smd_settings, 
+            acqua_db_info, 
+            validation_output
+        )
+    
+    # Personal/Desktop Speakerphone Validation
+    if is_personal_speakerphone:
+        found_code_ids = set()
+        for row in data:
+            found_code_ids.add(row[0])
+        
+        output_device_validation(
+            "Personal/Desktop Speakerphone", 
+            REQUIRED_PERSONAL_DESKTOP_SPEAKERPHONE, 
+            found_code_ids, 
+            smd_settings, 
+            acqua_db_info, 
+            validation_output
+        )
     
     # Display and prepare 54dB noise scenario results
     noise_output = []

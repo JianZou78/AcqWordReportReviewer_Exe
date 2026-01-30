@@ -12,7 +12,7 @@ pip install -r requirements.txt
 
 # Build the executable
 Write-Host "Creating executable..." -ForegroundColor Yellow
-pyinstaller --onefile --name "ACQUA_ReportReviewer_v1.0.0" process_acqua_reports.py
+pyinstaller --onefile --name "ACQUA_ReportReviewer_v1.1.0" process_acqua_reports.py
 
 Write-Host ""
 Write-Host "Build complete!" -ForegroundColor Green
