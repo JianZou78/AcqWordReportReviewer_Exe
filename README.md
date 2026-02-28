@@ -1,9 +1,8 @@
-# AcqWordReportReviewer_Exe
 # ACQUA Report Reviewer - User Guide
 
-**Version:** 1.1.0  
+**Version:** 1.2.0  
 **Author:** Jian Zou  
-**Last Updated:** January 30, 2026
+**Last Updated:** February 26, 2026
 
 ---
 
@@ -27,6 +26,7 @@ ACQUA Report Reviewer is a Python-based tool (also available as a standalone Win
 ### Key Features
 
 - **Multi-file Processing**: Select and process multiple ACQUA report files at once
+- **Sensitivity Label Support**: Automatically handles documents protected by Microsoft sensitivity labels (e.g., "Confidential") - no manual conversion required
 - **Test Time Analysis**: Calculate test duration by category and overall
 - **Test Case Validation**: Verify required test cases for Shared Speakerphone, Headset, Open Office Headset, Handset, and Personal/Desktop Speakerphone
 - **ACQUA & Database Version Tracking**: Extract software and database versions from reports
@@ -43,8 +43,9 @@ ACQUA Report Reviewer is a Python-based tool (also available as a standalone Win
 ## System Requirements
 
 - **Operating System**: Windows 10 or later
+- **Microsoft Word**: Required for processing sensitivity-labeled documents (Word must be installed)
 - **Python 3.8+** (if running from source)
-- **Required Python packages**: python-docx, tkinter
+- **Required Python packages**: python-docx, pywin32, tkinter
 - **No Python required** if using the packaged .exe
 
 ---
@@ -216,6 +217,23 @@ Extracts attenuation measurements during double talk scenarios:
 - **Cause**: The file may be corrupted or in an unsupported format
 - **Solution**: Verify the file opens correctly in Microsoft Word
 
+### "Attempting to convert protected document via Word..."
+- **Cause**: The document has a Microsoft sensitivity label (e.g., "Confidential") that encrypts the file
+- **Solution**: This is handled automatically. The tool uses Word to decrypt and process the file. Ensure:
+  - Microsoft Word is installed on your computer
+  - You have permission to open the document (can open it manually in Word)
+  - Word is not blocked by other processes
+
+### "Document is password-protected and cannot be opened automatically"
+- **Cause**: The document has a password protection (different from sensitivity labels)
+- **Solution**: Remove the password in Word: File > Info > Protect Document > Encrypt with Password, then clear the password
+
+### "OLE2/CFB (old .doc or encrypted/protected document)"
+- **Cause**: The file is either an old .doc format or encrypted
+- **Solution**: 
+  - For old .doc files: Open in Word, use "Save As" and select "Word Document (*.docx)"
+  - For sensitivity-labeled files: The tool will attempt automatic conversion if Word is available
+
 ### Console window closes immediately
 - **Cause**: An unexpected error occurred
 - **Solution**: Run from Command Prompt to see error details:
@@ -232,7 +250,10 @@ Extracts attenuation measurements during double talk scenarios:
 A: Yes, you can select files from any location. The output CSV will be saved in the folder of the first selected file.
 
 **Q: What file formats are supported?**  
-A: Only Microsoft Word documents (.docx) exported from ACQUA are supported. Legacy .doc files are not supported.
+A: Only Microsoft Word documents (.docx) exported from ACQUA are supported. Legacy .doc files are not directly supported but can be converted by opening in Word and saving as .docx.
+
+**Q: Can I process documents with sensitivity labels like "Confidential"?**  
+A: Yes! As of version 1.2.0, the tool automatically handles sensitivity-labeled documents. It uses Microsoft Word to decrypt the content, so Word must be installed on your computer. You need permission to open the document (i.e., you can open it manually in Word).
 
 **Q: How do I compare results from different test runs?**  
 A: Each run creates a new Smd_Report_Output.csv. Rename or move previous output files before running again to preserve them.
@@ -252,8 +273,5 @@ For questions or issues, contact:
 - **Email**: jianzou@microsoft.com
 
 ---
-
-*© 2026 Microsoft Corporation. For internal use only.*
-
 
 *© 2026 Microsoft Corporation. For internal use only.*
