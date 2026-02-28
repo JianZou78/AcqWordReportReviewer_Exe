@@ -8,10 +8,10 @@ test data, validation results, and status information.
 Author: Jian Zou
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __author__ = "Jian Zou"
 __email__ = "jianzou@microsoft.com"
-__date__ = "2026-01-30"
+__date__ = "2026-02-26"
 __description__ = "ACQUA Report Reviewer - Process and analyze ACQUA test reports"
 
 import tkinter as tk
@@ -20,7 +20,22 @@ import csv
 import re
 import os
 import sys
+import io
+import tempfile
+import time
 from datetime import datetime
+
+# Try to import pywin32 for Word COM automation (handles encrypted/protected docs)
+WIN32COM_AVAILABLE = False
+try:
+    import win32com.client
+    import pythoncom
+    WIN32COM_AVAILABLE = True
+except ImportError:
+    pass
+
+# Cache for converted protected documents (path -> BytesIO)
+_converted_doc_cache = {}
 
 def get_version_info():
     """Return version information as a formatted string."""
@@ -40,6 +55,326 @@ except ImportError:
     print("Please install it using the command: pip install python-docx")
     input("Press Enter to exit...")
     sys.exit(1)
+
+
+def detect_file_type(file_bytes):
+    """
+    Detect file type based on magic bytes.
+    Returns a tuple of (type_name, is_docx_compatible).
+    """
+    if len(file_bytes) < 8:
+        return ("unknown (too small)", False)
+    
+    # Check magic bytes
+    if file_bytes[:4] == b'PK\x03\x04':
+        return ("ZIP/DOCX", True)
+    elif file_bytes[:8] == b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1':
+        # OLE2/CFB format - could be old .doc OR encrypted/protected .docx
+        return ("OLE2/CFB (old .doc or encrypted/protected document)", False)
+    elif file_bytes[:4] == b'%PDF':
+        return ("PDF", False)
+    elif file_bytes[:5] == b'{\\rtf':
+        return ("RTF (Rich Text Format)", False)
+    elif file_bytes[:2] == b'\xff\xd8':
+        return ("JPEG image", False)
+    elif file_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+        return ("PNG image", False)
+    elif file_bytes[:4] == b'RIFF':
+        return ("RIFF (possibly WAV/AVI)", False)
+    else:
+        return ("unknown", False)
+
+
+def convert_protected_docx_via_word(file_path):
+    """
+    Use Word COM automation to open a protected/encrypted document and save it
+    as an unprotected .docx file. This handles sensitivity labels by copying
+    content to a new document.
+    
+    Uses caching to avoid repeated conversions of the same file.
+    
+    Returns: BytesIO object containing the unprotected document content
+    Raises: OSError if Word is not available or conversion fails
+    """
+    global _converted_doc_cache
+    
+    # Normalize the path for cache key
+    cache_key = os.path.normpath(os.path.abspath(file_path))
+    
+    # Check cache first
+    if cache_key in _converted_doc_cache:
+        # Return a new BytesIO with the same content (so it can be read again)
+        cached_bytes = _converted_doc_cache[cache_key]
+        return io.BytesIO(cached_bytes)
+    
+    if not WIN32COM_AVAILABLE:
+        raise OSError(
+            "Cannot automatically convert protected documents. "
+            "Install pywin32: pip install pywin32"
+        )
+    
+    last_error = None
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        word = None
+        doc = None
+        new_doc = None
+        temp_path = None
+        com_initialized = False
+        
+        try:
+            # Initialize COM for this thread
+            pythoncom.CoInitialize()
+            com_initialized = True
+            
+            # Add delay between retries
+            if attempt > 0:
+                print(f"  Retry attempt {attempt + 1}...")
+                time.sleep(2 * attempt)  # 2s, 4s delays
+            
+            # Try to get existing Word instance first, or create new one
+            try:
+                word = win32com.client.GetActiveObject("Word.Application")
+            except:
+                word = win32com.client.Dispatch("Word.Application")
+            
+            word.Visible = False
+            word.DisplayAlerts = 0  # wdAlertsNone - Suppress all alerts
+            
+            # Get absolute path with proper separators
+            abs_path = os.path.abspath(file_path).replace('/', '\\')
+            
+            # Open the document (Word handles the decryption if user has permissions)
+            doc = word.Documents.Open(
+                abs_path,
+                False,  # ConfirmConversions
+                True,   # ReadOnly
+                False   # AddToRecentFiles
+            )
+            
+            # Create a temporary file for the unprotected version
+            temp_fd, temp_path = tempfile.mkstemp(suffix='.docx')
+            os.close(temp_fd)
+            temp_path_win = temp_path.replace('/', '\\')
+            
+            # Copy all content to a new document (strips protection)
+            doc.Content.Select()
+            word.Selection.Copy()
+            
+            # Create a new blank document
+            new_doc = word.Documents.Add()
+            
+            # Paste the content
+            new_doc.Content.Paste()
+            
+            # Save the new document as .docx (FileFormat 12 = wdFormatXMLDocument)
+            new_doc.SaveAs(temp_path_win, 12)
+            
+            # Close documents before reading
+            new_doc.Close(0)  # wdDoNotSaveChanges
+            new_doc = None
+            doc.Close(0)
+            doc = None
+            
+            # Don't quit Word if we got an existing instance - just release reference
+            word = None
+            
+            # Read the temp file into memory
+            with open(temp_path, 'rb') as f:
+                file_bytes = f.read()
+            
+            # Verify it's now a proper docx (ZIP format)
+            if not file_bytes[:4] == b'PK\x03\x04':
+                raise OSError("Conversion succeeded but output is not a valid .docx file")
+            
+            # Cache the result for future calls
+            _converted_doc_cache[cache_key] = file_bytes
+            
+            return io.BytesIO(file_bytes)
+            
+        except pythoncom.com_error as e:
+            last_error = e
+            hr = e.args[0] if e.args else None
+            # -2147418111 = RPC_E_CALL_REJECTED (Call was rejected by callee)
+            # Retry on this error
+            if hr == -2147418111 and attempt < max_retries - 1:
+                continue
+            
+            error_desc = str(e.args[2][2]) if len(e.args) > 2 and e.args[2] else str(e)
+            if "password" in str(error_desc).lower():
+                raise OSError(
+                    f"Document is password-protected and cannot be opened automatically. "
+                    f"Please remove the password protection manually in Word."
+                )
+            raise OSError(f"Word COM error: {error_desc}")
+            
+        except Exception as e:
+            last_error = e
+            error_msg = str(e).lower()
+            if "password" in error_msg or "protected" in error_msg:
+                raise OSError(
+                    f"Document is password-protected and cannot be opened automatically. "
+                    f"Please remove the password protection manually in Word."
+                )
+            elif "permission" in error_msg or "access" in error_msg:
+                raise OSError(
+                    f"You don't have permission to access this document. "
+                    f"Contact the document owner or your IT administrator."
+                )
+            raise OSError(f"Failed to convert protected document: {e}")
+            
+        finally:
+            # Clean up in reverse order
+            if new_doc:
+                try:
+                    new_doc.Close(0)
+                except:
+                    pass
+            if doc:
+                try:
+                    doc.Close(0)
+                except:
+                    pass
+            if word:
+                try:
+                    word.Quit()
+                except:
+                    pass
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+            if com_initialized:
+                try:
+                    pythoncom.CoUninitialize()
+                except:
+                    pass
+    
+    # If we get here, all retries failed
+    raise OSError(f"Failed after {max_retries} attempts: {last_error}")
+
+
+def safe_open_docx(file_path):
+    """
+    Safely open a .docx file by reading it into memory first.
+    This handles OneDrive Files-on-Demand (cloud-only) files by triggering
+    a download before python-docx tries to use zipfile on the path.
+    """
+    normalized = os.path.normpath(file_path)
+    if not os.path.exists(normalized):
+        raise FileNotFoundError(f"File not found: {normalized}")
+    
+    # Check file size - OneDrive placeholder files may be 0 bytes or very small
+    file_size = os.path.getsize(normalized)
+    if file_size == 0:
+        raise OSError(
+            f"File '{os.path.basename(normalized)}' appears to be empty (0 bytes). "
+            f"If this file is on OneDrive, it may not be downloaded yet. "
+            f"Right-click the file in File Explorer and select 'Always keep on this device', "
+            f"then wait for the sync to complete before trying again."
+        )
+    
+    try:
+        with open(normalized, 'rb') as f:
+            file_bytes = f.read()
+    except OSError as e:
+        raise OSError(
+            f"Cannot read '{os.path.basename(normalized)}'. "
+            f"If the file is on OneDrive, make sure it is downloaded locally "
+            f"(right-click > 'Always keep on this device'). Original error: {e}"
+        )
+    
+    # Verify we got actual content
+    if len(file_bytes) < 100:
+        raise OSError(
+            f"File '{os.path.basename(normalized)}' is too small ({len(file_bytes)} bytes) "
+            f"to be a valid Word document. If this file is on OneDrive, it may still be syncing. "
+            f"Please ensure the file is fully downloaded before processing."
+        )
+    
+    # Detect the actual file type before attempting to open
+    file_type, is_docx = detect_file_type(file_bytes)
+    
+    if not is_docx:
+        filename = os.path.basename(normalized)
+        if "OLE2/CFB" in file_type:
+            # Try to convert using Word COM automation
+            if WIN32COM_AVAILABLE:
+                # Check if already cached (avoid printing message for cached files)
+                cache_key = os.path.normpath(os.path.abspath(normalized))
+                if cache_key not in _converted_doc_cache:
+                    print(f"  Attempting to convert protected document via Word...")
+                try:
+                    doc_stream = convert_protected_docx_via_word(normalized)
+                    return Document(doc_stream)
+                except Exception as e:
+                    raise OSError(
+                        f"'{filename}' is protected/encrypted and automatic conversion failed.\n"
+                        f"Error: {e}\n\n"
+                        f"MANUAL SOLUTION:\n"
+                        f"  - Open in Word, go to File > Info > Sensitivity, "
+                        f"change to 'General' or a non-encrypting label, then save."
+                    )
+            else:
+                raise OSError(
+                    f"'{filename}' cannot be opened. This is either:\n"
+                    f"  1. An old Word .doc file (not .docx), OR\n"
+                    f"  2. A .docx file protected by a Microsoft sensitivity label (e.g., 'Confidential')\n\n"
+                    f"AUTOMATIC SOLUTION: Install pywin32 to enable automatic conversion:\n"
+                    f"  pip install pywin32\n\n"
+                    f"MANUAL SOLUTIONS:\n"
+                    f"  - If sensitivity label: Open in Word, go to File > Info > Sensitivity, "
+                    f"change to 'General' or a non-encrypting label, then save.\n"
+                    f"  - If old .doc format: Open in Word, use 'Save As' and select "
+                    f"'Word Document (*.docx)' format."
+                )
+        elif file_type == "PDF":
+            raise OSError(
+                f"'{filename}' is a PDF file, not a Word document.\n"
+                f"SOLUTION: Convert the PDF to .docx format using Microsoft Word or an online converter."
+            )
+        elif file_type == "RTF (Rich Text Format)":
+            raise OSError(
+                f"'{filename}' is an RTF file, not a Word document.\n"
+                f"SOLUTION: Open the file in Microsoft Word and save it as .docx format."
+            )
+        elif "image" in file_type.lower():
+            raise OSError(
+                f"'{filename}' is a {file_type}, not a Word document.\n"
+                f"Please select a valid .docx file."
+            )
+        elif file_type != "unknown":
+            raise OSError(
+                f"'{filename}' is a {file_type}, not a Word document (.docx).\n"
+                f"Please select a valid .docx file."
+            )
+    
+    try:
+        return Document(io.BytesIO(file_bytes))
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "package not found" in error_msg or "bad zipfile" in error_msg or "not a zip file" in error_msg:
+            # Check if it's in a OneDrive path
+            is_onedrive = "onedrive" in normalized.lower()
+            if is_onedrive:
+                raise OSError(
+                    f"Cannot open '{os.path.basename(normalized)}' as a Word document. "
+                    f"The file may not be fully downloaded from OneDrive.\n"
+                    f"SOLUTION: In File Explorer, navigate to the file, right-click it, "
+                    f"and select 'Always keep on this device'. Wait for the green checkmark "
+                    f"to appear, then try again.\n"
+                    f"Original error: {e}"
+                )
+            else:
+                raise OSError(
+                    f"Cannot open '{os.path.basename(normalized)}' as a Word document. "
+                    f"The file appears to be corrupted or is not a valid .docx file.\n"
+                    f"Detected file type: {file_type}\n"
+                    f"Original error: {e}"
+                )
+        raise
 
 def extract_clean_date(text):
     """
@@ -70,7 +405,7 @@ def extract_acqua_database_info(file_paths):
     
     for file_path in file_paths:
         try:
-            doc = Document(file_path)
+            doc = safe_open_docx(file_path)
             file_name = os.path.basename(file_path)
             
             acqua_version = None
@@ -433,7 +768,7 @@ def extract_54db_noise_results(file_paths):
     
     for file_path in file_paths:
         try:
-            doc = Document(file_path)
+            doc = safe_open_docx(file_path)
             file_name = os.path.basename(file_path)
             device_name = file_name.replace('.docx', '')
             
@@ -680,7 +1015,7 @@ def extract_double_talk_performance(file_paths):
     
     for file_path in file_paths:
         try:
-            doc = Document(file_path)
+            doc = safe_open_docx(file_path)
             file_name = os.path.basename(file_path)
             device_name = file_name.replace('.docx', '')
             
@@ -794,7 +1129,7 @@ def extract_smd_settings(file_paths):
     
     for file_path in file_paths:
         try:
-            doc = Document(file_path)
+            doc = safe_open_docx(file_path)
             file_name = os.path.basename(file_path)
             
             current_labcore = {}
@@ -954,7 +1289,7 @@ def extract_status_table(file_paths):
     
     for file_path in file_paths:
         try:
-            doc = Document(file_path)
+            doc = safe_open_docx(file_path)
             file_name = os.path.basename(file_path)
             
             # Build a map of SMD title -> limits by scanning document structure
@@ -1266,7 +1601,7 @@ def process_reports(file_paths):
     for file_path in file_paths:
         print(f"Reading file: {file_path}")
         try:
-            doc = Document(file_path)
+            doc = safe_open_docx(file_path)
             
             # Temporary lists to hold data for the current file
             titles = []
@@ -1664,7 +1999,7 @@ def main():
 
         # Add minimal subset test cases output
         minimal_subset = [
-            "P01A", "P02A", "P03A", "P04A", "P09A", "P12A", "P13A", "P14A", "P21A", "P25A", "P26A", "P27A", "P01D", "P01R", "P02R", "P10R", "P11R", "P12R"
+            "P01A", "P02A", "P03A", "P04A", "P09A", "P12A", "P13A", "P14A", "P21A", "P25A", "P26A", "P01D", "P01R", "P02R", "P10R", "P11R", "P12R"
         ]
         minimal_subset_str = "Minimal subset test cases are: " + ", ".join(minimal_subset)
         print(f"\n{minimal_subset_str}\n")
