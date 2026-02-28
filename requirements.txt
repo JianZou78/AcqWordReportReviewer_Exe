@@ -1,3 +1,4 @@
 # ACQUA Report Reviewer Dependencies
 python-docx>=0.8.11
 pyinstaller>=6.0.0
+pywin32>=306
